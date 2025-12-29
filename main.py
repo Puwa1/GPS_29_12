@@ -37,8 +37,12 @@ class GPSTrackingApp(ctk.CTk):
         self.cached_logs = [] 
         self.log_widgets_pool = [] 
         
-        # Limit Logs to 5
-        self.MAX_LOG_DISPLAY = 5
+        # [SETTING] UI Configuration
+        self.MAX_LOG_DISPLAY = 5 
+        self.log_visible = True
+        self.interp_steps = 10  # 10 = ภาพเนียน (Visual Smooth)
+        
+        self.last_draw_index = -1  
         
         # [MEASURE VARS]
         self.is_measuring = False
@@ -53,11 +57,9 @@ class GPSTrackingApp(ctk.CTk):
         self.trans_icon = create_transparent_icon()
         self.current_icon_key = None 
 
-        # Bindings (Keyboard)
+        # Bindings
         self.bind("<Left>", self.move_backward)
         self.bind("<Right>", self.move_forward)
-        
-        # Bindings for Measure
         self.bind("<Delete>", lambda e: self.undo_measure_point())
         self.bind("<BackSpace>", lambda e: self.undo_measure_point())
         self.bind("<Escape>", lambda e: self.clear_measurements())
@@ -65,14 +67,15 @@ class GPSTrackingApp(ctk.CTk):
         self.setup_ui()
 
     def setup_ui(self):
-        # Layout Config
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1) 
+        self.grid_rowconfigure(1, weight=0) 
+        self.grid_rowconfigure(2, weight=0)
 
         # --- SIDEBAR ---
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid(row=0, column=0, rowspan=3, sticky="nsew")
         self.sidebar.grid_propagate(False)
 
         ctk.CTkLabel(self.sidebar, text="GPS MONITOR", font=ctk.CTkFont(size=26, weight="bold")).pack(pady=(20, 10))
@@ -80,7 +83,7 @@ class GPSTrackingApp(ctk.CTk):
         self.btn_load = ctk.CTkButton(self.sidebar, text="📂 เลือกไฟล์ CSV", height=40, font=ctk.CTkFont(size=16, weight="bold"), command=self.load_csv_action)
         self.btn_load.pack(padx=20, pady=5, fill="x")
 
-        ctk.CTkLabel(self.sidebar, text="📅 เลือกช่วงเวลา:", font=("Arial", 14, "bold"), text_color="gray").pack(padx=20, pady=(5, 0), anchor="w")
+        ctk.CTkLabel(self.sidebar, text="📅 เลือกช่วงเวลา:", font=("Arial", 16, "bold"), text_color="white").pack(padx=20, pady=(5, 0), anchor="w")
         self.date_var = ctk.StringVar(value="-- กรุณาโหลดไฟล์ --")
         self.date_combo = ctk.CTkComboBox(self.sidebar, variable=self.date_var, height=30, font=("Arial", 14), state="disabled", command=self.on_date_selected)
         self.date_combo.pack(padx=20, pady=(5, 5), fill="x")
@@ -92,7 +95,7 @@ class GPSTrackingApp(ctk.CTk):
         ctrl_group = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         ctrl_group.pack(fill="x", padx=10, pady=5)
         
-        ctk.CTkLabel(ctrl_group, text="🔢 เลือกช่วงแถว:", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=0)
+        ctk.CTkLabel(ctrl_group, text="🔢 เลือกช่วงแถว:", font=("Arial", 16, "bold")).pack(anchor="w", padx=5, pady=0)
         row_frame = ctk.CTkFrame(ctrl_group, fg_color="transparent")
         row_frame.pack(fill="x", pady=2)
         self.entry_start = ctk.CTkEntry(row_frame, width=80, height=30, placeholder_text="Start")
@@ -101,7 +104,7 @@ class GPSTrackingApp(ctk.CTk):
         self.entry_end = ctk.CTkEntry(row_frame, width=80, height=30, placeholder_text="End")
         self.entry_end.pack(side="left", padx=(5, 5))
 
-        ctk.CTkLabel(ctrl_group, text="⚙️ จำกัดจุดกราฟิก:", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=(5, 0))
+        ctk.CTkLabel(ctrl_group, text="⚙️ จำกัดจุดกราฟิก:", font=("Arial", 16, "bold")).pack(anchor="w", padx=5, pady=(5, 0))
         limit_frame = ctk.CTkFrame(ctrl_group, fg_color="transparent")
         limit_frame.pack(fill="x", pady=2)
         self.entry_limit = ctk.CTkEntry(limit_frame, width=90, height=30)
@@ -121,7 +124,7 @@ class GPSTrackingApp(ctk.CTk):
                                          fg_color="gray40", hover_color="gray50", command=self.toggle_measure_mode)
         self.btn_measure.pack(padx=20, pady=(5, 5), fill="x")
 
-        self.btn_clear = ctk.CTkButton(self.sidebar, text="🗑 ล้างหน้าจอ", height=35, font=("Arial", 14, "bold"), fg_color="transparent", border_width=2, text_color=("gray10", "#DCE4EE"), command=self.clear_map)
+        self.btn_clear = ctk.CTkButton(self.sidebar, text="🗑 ล้างหน้าจอ", height=35, font=("Arial", 16, "bold"), fg_color="transparent", border_width=2, text_color=("gray10", "#DCE4EE"), command=self.clear_map)
         self.btn_clear.pack(padx=20, pady=5, fill="x")
         
         # Info Dashboard
@@ -131,7 +134,7 @@ class GPSTrackingApp(ctk.CTk):
         def create_stat_row(parent, title, icon=""):
             f = ctk.CTkFrame(parent, fg_color="transparent")
             f.pack(fill="x", pady=2)
-            ctk.CTkLabel(f, text=f"{icon} {title}", font=("Arial", 14), text_color="gray").pack(anchor="w")
+            ctk.CTkLabel(f, text=f"{icon} {title}", font=("Arial", 16), text_color="white").pack(anchor="w")
             lbl = ctk.CTkLabel(f, text="-", font=("Consolas", 22, "bold"), text_color=cfg.COLORS["primary"])
             lbl.pack(anchor="w")
             return lbl
@@ -139,11 +142,11 @@ class GPSTrackingApp(ctk.CTk):
         self.lbl_time = create_stat_row(self.info_frame, "เวลา", "🕒")
         self.lbl_speed = create_stat_row(self.info_frame, "ความเร็ว", "🚀")
         
-        ctk.CTkLabel(self.info_frame, text="🚦 สถานะ", font=("Arial", 14), text_color="gray").pack(anchor="w", pady=(10,2))
+        ctk.CTkLabel(self.info_frame, text="🚦 สถานะ", font=("Arial", 16), text_color="white").pack(anchor="w", pady=(10,2))
         self.lbl_status = ctk.CTkLabel(self.info_frame, text="-", font=("Arial", 18, "bold"), text_color="white", fg_color="gray30", corner_radius=8, padx=15, pady=5)
         self.lbl_status.pack(anchor="w", pady=2)
 
-        ctk.CTkLabel(self.info_frame, text="📍 พิกัด (Lat, Lon)", font=("Arial", 14), text_color="gray").pack(anchor="w", pady=(10, 2))
+        ctk.CTkLabel(self.info_frame, text="📍 พิกัด (Lat, Lon)", font=("Arial", 16), text_color="white").pack(anchor="w", pady=(10, 2))
         coord_frame = ctk.CTkFrame(self.info_frame, fg_color="transparent")
         coord_frame.pack(fill="x", anchor="w", pady=2)
         self.lbl_coord = ctk.CTkLabel(coord_frame, text="- , -", font=("Consolas", 20, "bold"), text_color=cfg.COLORS["primary"])
@@ -151,19 +154,19 @@ class GPSTrackingApp(ctk.CTk):
         self.btn_copy_coord = ctk.CTkButton(coord_frame, text="📋", width=30, height=25, font=("Arial", 12), command=self.copy_coords_to_clipboard)
         self.btn_copy_coord.pack(side="left", padx=10)
 
-        self.lbl_file_info = ctk.CTkLabel(self.sidebar, text="พร้อมใช้งาน", font=("Arial", 14, "bold"), text_color=cfg.COLORS["primary"]) 
+        self.lbl_file_info = ctk.CTkLabel(self.sidebar, text="พร้อมใช้งาน", font=("Arial", 16, "bold"), text_color=cfg.COLORS["primary"]) 
         self.lbl_file_info.pack(side="bottom", pady=20)
 
         # --- RIGHT PANEL ---
         self.right_panel = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        self.right_panel.grid(row=0, column=1, sticky="nsew")
+        self.right_panel.grid(row=0, column=1, rowspan=3, sticky="nsew")
         
         self.right_panel.grid_rowconfigure(0, weight=1) 
         self.right_panel.grid_rowconfigure(1, weight=0) 
         self.right_panel.grid_rowconfigure(2, weight=0) 
         self.right_panel.grid_columnconfigure(0, weight=1)
 
-        # 1. Map (Cache Enabled)
+        # 1. Map
         self.map_widget = tkintermapview.TkinterMapView(self.right_panel, corner_radius=0, use_database_only=False, database_path="map_cache.db")
         self.map_widget.grid(row=0, column=0, sticky="nsew")
         self.map_widget.set_position(13.7563, 100.5018)
@@ -197,47 +200,170 @@ class GPSTrackingApp(ctk.CTk):
         self.map_widget.canvas.bind("<MouseWheel>", self.update_map_scale, add="+")
         self.map_widget.canvas.bind("<ButtonRelease-1>", self.update_map_scale, add="+")
         self.map_widget.canvas.bind("<Configure>", self.update_map_scale, add="+")
+        
+        self.map_widget.canvas.bind("<B1-Motion>", self.update_offscreen_indicator, add="+")
+        self.map_widget.canvas.bind("<ButtonRelease-1>", self.update_offscreen_indicator, add="+")
 
         # 2. Control Frame (Timeline)
         self.control_frame = ctk.CTkFrame(self.right_panel, corner_radius=0, height=60, fg_color=("white", "#212121"))
         self.control_frame.grid(row=1, column=0, sticky="ew")
+        self.control_frame.grid_propagate(False) 
         
-        ctk.CTkLabel(self.control_frame, text="Timeline:", font=("Arial", 18, "bold")).pack(side="left", padx=25)
-        # Slider
-        self.slider = ctk.CTkSlider(self.control_frame, from_=0, to=100, command=self.on_slider_move, height=25)
-        self.slider.pack(side="left", fill="x", expand=True, padx=25, pady=20)
+        ctk.CTkLabel(self.control_frame, text="Timeline:", font=("Arial", 14, "bold")).pack(side="left", padx=15)
+        self.slider = ctk.CTkSlider(self.control_frame, from_=0, to=100, command=self.on_slider_move, height=20)
+        self.slider.pack(side="left", fill="x", expand=True, padx=(10, 5), pady=15)
 
-        # 3. Log Frame (History)
-        self.log_container = ctk.CTkFrame(self.right_panel, corner_radius=0, height=180, fg_color="gray15")
+        self.btn_toggle_log = ctk.CTkButton(self.control_frame, text="▼ ซ่อน", width=60, height=28, 
+                                            font=("Arial", 12, "bold"), fg_color="gray30", hover_color="gray40",
+                                            command=self.toggle_log_view)
+        self.btn_toggle_log.pack(side="right", padx=15, pady=10)
+
+        # 3. Log Frame
+        self.log_container = ctk.CTkFrame(self.right_panel, corner_radius=0, height=110, fg_color="gray15")
         self.log_container.grid(row=2, column=0, sticky="nsew")
         self.log_container.grid_propagate(False)
 
-        log_header = ctk.CTkFrame(self.log_container, height=30, fg_color="gray20", corner_radius=0)
-        log_header.pack(fill="x")
-        ctk.CTkLabel(log_header, text="📝 ประวัติสถานะ (5 รายการล่าสุด)", font=("Arial", 14, "bold"), text_color="white").pack(side="left", padx=20, pady=2)
-
         self.log_scroll = ctk.CTkScrollableFrame(self.log_container, fg_color="transparent")
-        self.log_scroll.pack(fill="both", expand=True, padx=10, pady=5)
+        self.log_scroll.pack(fill="both", expand=True, padx=5, pady=0)
 
         self.init_log_pool()
+
+    # --- UI UPDATES & HELPERS ---
+    def update_map_scale(self, event=None):
+        try:
+            zoom = self.map_widget.zoom
+            if zoom is None: return
+            lat = self.map_widget.get_position()[0]
+            meters_per_pixel = 156543.03392 * math.cos(math.radians(lat)) / (2 ** zoom)
+            target_px = 100
+            approx_dist = meters_per_pixel * target_px
+            magnitude = 10 ** math.floor(math.log10(approx_dist))
+            normalized = approx_dist / magnitude
+            if normalized < 1.5: nice_val = 1
+            elif normalized < 3.5: nice_val = 2
+            elif normalized < 7.5: nice_val = 5
+            else: nice_val = 10
+            real_dist_m = nice_val * magnitude
+            final_width_px = real_dist_m / meters_per_pixel
+            label_text = f"{int(real_dist_m/1000)} กม." if real_dist_m >= 1000 else f"{int(real_dist_m)} ม."
+            self.scale_canvas.update_scale(label_text, final_width_px)
+            self.update_offscreen_indicator()
+        except:
+            self.scale_canvas.delete("all")
+
+    def toggle_log_view(self):
+        self.log_visible = not self.log_visible
+        if self.log_visible:
+            self.log_container.grid(row=2, column=0, sticky="nsew")
+            self.btn_toggle_log.configure(text="▼ ซ่อน")
+        else:
+            self.log_container.grid_forget()
+            self.btn_toggle_log.configure(text="▲ แสดง")
+
+    # --- OFF-SCREEN INDICATOR WITH DISTANCE ---
+    def update_offscreen_indicator(self, event=None):
+        self.map_widget.canvas.delete("offscreen_arrow")
+        if not self.car_marker: return
+
+        try:
+            zoom = self.map_widget.zoom
+            if zoom is None: return
+            
+            c_lat, c_lon = self.map_widget.get_position()
+            t_lat, t_lon = self.car_marker.position
+            
+            # คำนวณระยะทาง
+            dist = haversine_distance(c_lat, c_lon, t_lat, t_lon)
+            if dist >= 1000:
+                dist_str = f"{dist/1000:.1f} กม."
+            else:
+                dist_str = f"{int(dist)} ม."
+
+            def get_px(lat, lon):
+                tile_size = 256
+                num_tiles = 2 ** zoom
+                x = (lon + 180) / 360 * num_tiles * tile_size
+                y = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * num_tiles * tile_size
+                return x, y
+
+            cx, cy = get_px(c_lat, c_lon)
+            tx, ty = get_px(t_lat, t_lon)
+            
+            w = self.map_widget.winfo_width()
+            h = self.map_widget.winfo_height()
+            
+            screen_x = (w / 2) + (tx - cx)
+            screen_y = (h / 2) + (ty - cy)
+            
+            if 0 <= screen_x <= w and 0 <= screen_y <= h:
+                return
+
+            center_x, center_y = w / 2, h / 2
+            dx = screen_x - center_x
+            dy = screen_y - center_y
+            angle = math.atan2(dy, dx)
+            
+            pad = 20 
+            if dx == 0: dx = 0.001
+            slope = dy / dx
+            
+            if dx > 0:
+                edge_x = w - pad
+                edge_y = center_y + slope * (edge_x - center_x)
+            else:
+                edge_x = pad
+                edge_y = center_y + slope * (edge_x - center_x)
+                
+            if edge_y < pad or edge_y > h - pad:
+                if dy > 0:
+                    edge_y = h - pad
+                    edge_x = center_x + (edge_y - center_y) / slope
+                else:
+                    edge_y = pad
+                    edge_x = center_x + (edge_y - center_y) / slope
+
+            # [CONFIG] ขยายขนาดลูกศร
+            arrow_len = 40 
+            tip_x, tip_y = edge_x, edge_y
+            
+            angle1 = angle + math.radians(150)
+            angle2 = angle - math.radians(150)
+            
+            p1_x = tip_x + arrow_len * math.cos(angle1)
+            p1_y = tip_y + arrow_len * math.sin(angle1)
+            p2_x = tip_x + arrow_len * math.cos(angle2)
+            p2_y = tip_y + arrow_len * math.sin(angle2)
+            
+            self.map_widget.canvas.create_polygon(tip_x, tip_y, p1_x, p1_y, p2_x, p2_y, 
+                                                  fill="#ff0000", outline="white", width=2, 
+                                                  tags=("offscreen_arrow", "clickable_arrow"))
+            
+            # [CONFIG] ขยับระยะข้อความ
+            text_offset = 60 
+            text_x = edge_x - text_offset * math.cos(angle)
+            text_y = edge_y - text_offset * math.sin(angle)
+            
+            self.map_widget.canvas.create_text(text_x, text_y, text=dist_str, 
+                                               fill="#ff0000", font=("Arial", 12, "bold"),
+                                               tags=("offscreen_arrow", "clickable_arrow"))
+            
+            self.map_widget.canvas.tag_bind("clickable_arrow", "<Button-1>", lambda e: self.zoom_to_car())
+            self.map_widget.canvas.tag_raise("offscreen_arrow")
+
+        except Exception as e:
+            pass
 
     # --- MEASURE LOGIC ---
     def toggle_measure_mode(self):
         self.is_measuring = not self.is_measuring
-        
-        # Clear old commands
         self.map_widget.right_click_menu_commands = []
-        
         if self.is_measuring:
             self.btn_measure.configure(text="❌ หยุดวัดระยะทาง", fg_color=cfg.COLORS["danger"])
             self.map_widget.canvas.config(cursor="crosshair")
             self.measure_info_frame.place(relx=0.5, rely=0.03, anchor="n")
             self.clear_measurements()
-            
-            # [KEY FIX] ใช้ Built-in Context Menu
             self.map_widget.add_right_click_menu_command(label="❌ ลบจุดล่าสุด (Undo)", command=self.undo_measure_point, pass_coords=False)
             self.map_widget.add_right_click_menu_command(label="🗑️ ล้างทั้งหมด (Clear)", command=self.clear_measurements, pass_coords=False)
-            
         else:
             self.btn_measure.configure(text="📏 เริ่มวัดระยะทาง", fg_color="gray40")
             self.map_widget.canvas.config(cursor="")
@@ -247,85 +373,70 @@ class GPSTrackingApp(ctk.CTk):
 
     def on_map_click(self, coords):
         if not self.is_measuring: return
-        
         lat, lon = coords
         self.measure_coords.append((lat, lon))
-        
         marker = self.map_widget.set_marker(lat, lon, text="", icon=self.circle_icon, icon_anchor="center")
         self.measure_point_markers.append(marker)
-        
         if len(self.measure_coords) > 1:
             p1 = self.measure_coords[-2]
             p2 = self.measure_coords[-1]
-            
             path_bg = self.map_widget.set_path([p1, p2], color="black", width=5)
             path_fg = self.map_widget.set_path([p1, p2], color="white", width=3)
             self.measure_segment_paths.append([path_bg, path_fg])
-            
             dist = haversine_distance(p1[0], p1[1], p2[0], p2[1])
             dist_str = f"{dist/1000:.2f} กม." if dist >= 1000 else f"{dist:.2f} ม."
-            
             mid_lat = (p1[0] + p2[0]) / 2
             mid_lon = (p1[1] + p2[1]) / 2
-            label = self.map_widget.set_marker(mid_lat, mid_lon, text=dist_str, 
-                                               icon=self.trans_icon,
-                                               text_color="white", 
-                                               font=("Arial", 12, "bold"))
+            label = self.map_widget.set_marker(mid_lat, mid_lon, text=dist_str, text_color="black", icon=self.trans_icon, font=("Arial", 12, "bold"))
             self.measure_segment_labels.append(label)
-        
         self.update_total_distance_label()
 
     def undo_measure_point(self, event=None):
         if not self.is_measuring or not self.measure_coords: return
-        
         self.measure_coords.pop()
-        
         if self.measure_point_markers:
             m = self.measure_point_markers.pop()
             try: m.delete()
             except: pass
-            
         if self.measure_segment_paths:
             paths = self.measure_segment_paths.pop()
             for p in paths:
                 try: p.delete()
                 except: pass
-                
         if self.measure_segment_labels:
             l = self.measure_segment_labels.pop()
             try: l.delete()
             except: pass
-            
         self.update_total_distance_label()
 
     def update_total_distance_label(self):
         total_dist = calculate_total_distance(self.measure_coords)
         if total_dist >= 1000:
-            txt = f"รวมระยะทาง: {total_dist/1000:.2f} กม."
+            txt_m = f"{total_dist/1000:.2f} กม."
         else:
-            txt = f"รวมระยะทาง: {total_dist:.2f} ม."
-        
+            txt_m = f"{total_dist:.2f} ม."
         feet = total_dist * 3.28084
-        txt_full = f"{txt} ({feet:,.2f} ฟุต)"
-        self.measure_label.configure(text=txt_full)
+        if feet >= 5280:
+            miles = feet / 5280
+            txt_imp = f"{miles:.2f} ไมล์"
+        else:
+            txt_imp = f"{feet:,.2f} ฟุต"
+        self.measure_label.configure(text=f"รวมระยะทาง: {txt_m} ({txt_imp})", text_color="black")
 
     def clear_measurements(self):
         for m in self.measure_point_markers:
             try: m.delete()
             except: pass
         self.measure_point_markers = []
-        
         for paths in self.measure_segment_paths:
             for p in paths:
                 try: p.delete()
                 except: pass
         self.measure_segment_paths = []
-        
         for l in self.measure_segment_labels:
             try: l.delete()
             except: pass
         self.measure_segment_labels = []
-        
         self.measure_coords = []
         self.update_total_distance_label()
 
@@ -333,25 +444,20 @@ class GPSTrackingApp(ctk.CTk):
     def load_csv_action(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if not file_path: return
-        
         self.lbl_file_info.configure(text="กำลังอ่านไฟล์...")
         self.update_idletasks()
-        
         df, error = process_gps_data(file_path)
         if error:
             messagebox.showerror("Error", error)
             self.lbl_file_info.configure(text="Error")
             return
-
         self.raw_df = df
         unique_dates = sorted(self.raw_df['date_str'].unique())
         combo_values = [cfg.ALL_DAYS_OPTION] + unique_dates
-        
         self.date_combo.configure(state="normal", values=combo_values)
         self.date_combo.set(cfg.ALL_DAYS_OPTION) 
         self.entry_start.delete(0, "end")
         self.entry_end.delete(0, "end")
-        
         self.on_date_selected(cfg.ALL_DAYS_OPTION)
         self.lbl_file_info.configure(text=f"โหลดสำเร็จ")
 
@@ -370,59 +476,49 @@ class GPSTrackingApp(ctk.CTk):
 
     def apply_settings(self):
         if self.filtered_df is None or self.filtered_df.empty: return
-        
         start_val = self.entry_start.get().strip()
         end_val = self.entry_end.get().strip()
         df_to_process = self.filtered_df
-        
         if start_val or end_val:
             try:
                 s = int(start_val) if start_val else 0
                 e = int(end_val) if end_val else len(self.filtered_df)
                 if s < e: df_to_process = self.filtered_df.iloc[s:e]
             except ValueError: pass 
-
         limit_val = 0
         try:
             val = self.entry_limit.get().strip()
             if val: limit_val = int(val)
         except: pass
-
         self.process_display_data(df_to_process, limit_val)
         self.draw_map_elements()
 
     def process_display_data(self, df, max_points):
         total = len(df)
         if total == 0: return
-
         self.reset_logs()
         self.cached_logs = []
-        
         step = 1
         if max_points > 0 and total > max_points:
             step = max(1, total // max_points)
-        
         path_df = df.iloc[::step, :]
-        
         cols = {c.lower().strip(): c for c in df.columns}
         col_lat = cols.get('lat')
         col_lon = cols.get('long') or cols.get('lon') or cols.get('lng')
         col_time = cols.get('r-time') or cols.get('time')
         col_speed = cols.get('gps_speed') or cols.get('speed')
         col_acc = cols.get('acc-on') or cols.get('acc')
-
         self.path_points = []
         for _, row in path_df.iterrows():
             lat, lon = float(row[col_lat]), float(row[col_lon])
             if lat != 0.0 and lon != 0.0:
                 self.path_points.append((lat, lon))
-
         self.animation_points = []
         records = path_df.to_dict('records')
         prev_status = None
         
-        # [TUNING] 10 = Smooth + Responsive
-        interp_steps = 10 
+        # [SETTING] ใช้ 10 เพื่อความละเอียด (Smooth)
+        self.interp_steps = 10 
 
         for i in range(len(records)):
             p1 = records[i]
@@ -433,15 +529,12 @@ class GPSTrackingApp(ctk.CTk):
             else:
                 lat1, lon1 = float(p1[col_lat]), float(p1[col_lon])
                 lat2, lon2 = lat1, lon1
-
             speed1 = float(p1.get(col_speed, 0)) if col_speed else 0
             acc_on = str(p1.get(col_acc, "0")) if col_acc else "0"
             is_run = ("1" in acc_on) or ("ON" in acc_on.upper())
-            
             if not is_run: st, cl, ikey = "Engine Off", cfg.COLORS["danger"], "stop"
             elif speed1 == 0: st, cl, ikey = "Idling", cfg.COLORS["warning"], "idle"
             else: st, cl, ikey = "Running", cfg.COLORS["success"], "run"
-
             if st != prev_status:
                 prev_status = st
                 if "Idling" in st or "Engine Off" in st:
@@ -451,20 +544,21 @@ class GPSTrackingApp(ctk.CTk):
                         "trigger_idx": len(self.animation_points),
                         "status": st, "time": t_str, "row": path_df.index[i], "color": cl
                     })
-
             if i < len(records) - 1:
-                for j in range(interp_steps):
-                    t = j / interp_steps
+                for j in range(self.interp_steps):
+                    t = j / self.interp_steps
                     lat_next = lat1 + (lat2 - lat1) * t
                     lon_next = lon1 + (lon2 - lon1) * t
                     self.animation_points.append({
                         "lat": lat_next, "lon": lon_next,
+                        "real_lat": lat1, "real_lon": lon1, # [KEY] เก็บค่าจริง
                         "time": p1[col_time].strftime('%d/%m/%Y %H:%M:%S'),
                         "speed": speed1, "status": st, "color_code": cl, "icon_key": ikey
                     })
             else:
                 self.animation_points.append({
                     "lat": lat1, "lon": lon1,
+                    "real_lat": lat1, "real_lon": lon1, # [KEY] เก็บค่าจริง
                     "time": p1[col_time].strftime('%d/%m/%Y %H:%M:%S'),
                     "speed": speed1, "status": st, "color_code": cl, "icon_key": ikey
                 })
@@ -472,18 +566,15 @@ class GPSTrackingApp(ctk.CTk):
     def draw_map_elements(self):
         self.clear_map()
         if not self.path_points: return
-
         if len(self.path_points) > 1:
             try: self.path_line = self.map_widget.set_path(self.path_points, color="#004EFF", width=3)
             except: pass
-        
         try:
             if len(self.path_points) > 0:
                 s = self.path_points[0]
                 e = self.path_points[-1]
                 self.start_marker = self.map_widget.set_marker(s[0], s[1], text="Start", marker_color_circle="green", marker_color_outside="white")
                 self.end_marker = self.map_widget.set_marker(e[0], e[1], text="End", marker_color_circle="red", marker_color_outside="white")
-
             if len(self.animation_points) > 0:
                 first = self.animation_points[0]
                 self.current_icon_key = first['icon_key']
@@ -491,10 +582,11 @@ class GPSTrackingApp(ctk.CTk):
                     first['lat'], first['lon'], text="", icon=self.icons[self.current_icon_key], icon_anchor="center"
                 )
         except: pass
-
-        n_points = len(self.animation_points)
-        if n_points > 1:
-            self.slider.configure(from_=0, to=n_points-1, state="normal")
+        
+        # [KEY FIX] Smooth Slider
+        n_frames = len(self.animation_points)
+        if n_frames > 1:
+            self.slider.configure(from_=0, to=n_frames-1, number_of_steps=n_frames, state="normal")
             self.slider.set(0)
         else:
             self.slider.configure(state="disabled") 
@@ -502,47 +594,6 @@ class GPSTrackingApp(ctk.CTk):
         self.after(200, self.zoom_to_fit)
         self.on_slider_move(0)
         self.update_map_scale()
-
-    # --- UI UPDATES ---
-    def update_map_scale(self, event=None):
-        try:
-            zoom = self.map_widget.zoom
-            if zoom is None: return
-            lat = self.map_widget.get_position()[0]
-            meters_per_pixel = 156543.03392 * math.cos(math.radians(lat)) / (2 ** zoom)
-            
-            target_px = 100
-            approx_dist = meters_per_pixel * target_px
-            magnitude = 10 ** math.floor(math.log10(approx_dist))
-            normalized = approx_dist / magnitude
-            
-            if normalized < 1.5: nice_val = 1
-            elif normalized < 3.5: nice_val = 2
-            elif normalized < 7.5: nice_val = 5
-            else: nice_val = 10
-                
-            real_dist_m = nice_val * magnitude
-            final_width_px = real_dist_m / meters_per_pixel
-            
-            label_text = f"{int(real_dist_m/1000)} กม." if real_dist_m >= 1000 else f"{int(real_dist_m)} ม."
-            self.scale_canvas.update_scale(label_text, final_width_px)
-        except:
-            self.scale_canvas.delete("all")
-
-    def zoom_to_fit(self):
-        if not self.path_points: return
-        lats = [p[0] for p in self.path_points]
-        lons = [p[1] for p in self.path_points]
-        if lats and lons:
-            try:
-                min_lat, max_lat = min(lats), max(lats)
-                min_lon, max_lon = min(lons), max(lons)
-                if min_lat == max_lat and min_lon == max_lon:
-                    self.map_widget.set_position(min_lat, min_lon)
-                    self.map_widget.set_zoom(15)
-                else:
-                    self.map_widget.fit_bounding_box((max_lat, min_lon), (min_lat, max_lon))
-            except: pass
 
     # --- CONTROLS ---
     def move_forward(self, event=None):
@@ -560,35 +611,59 @@ class GPSTrackingApp(ctk.CTk):
             self.on_slider_move(current - 1)
 
     def on_slider_move(self, value):
-        # [IMPROVED] Update immediately
-        self.perform_update(int(value))
+        # [KEY] Delay 50ms ให้หน่วง
+        if self.slider_job:
+            self.after_cancel(self.slider_job)
+        self.slider_job = self.after(50, lambda: self.perform_update(int(value)))
 
     def perform_update(self, value):
         if not self.animation_points: return
-        try:
-            idx = int(value)
-            if idx >= len(self.animation_points): return 
-
-            data = self.animation_points[idx]
+        
+        idx = int(value)
+        # ไม่ต้องคูณแล้ว เพราะ slider ใช้ค่าเต็ม
+        
+        if idx >= len(self.animation_points): 
+            idx = len(self.animation_points) - 1
             
+        try:
+            data = self.animation_points[idx]
             if self.car_marker is None:
                  self.car_marker = self.map_widget.set_marker(data['lat'], data['lon'], text="", icon=self.icons[data['icon_key']], icon_anchor="center")
                  self.current_icon_key = data['icon_key']
-
             if data['icon_key'] != self.current_icon_key:
                 self.car_marker.change_icon(self.icons[data['icon_key']])
                 self.current_icon_key = data['icon_key']
             
+            # [KEY] Set Marker to Visual Pos
             self.car_marker.set_position(data['lat'], data['lon'])
+            
             self.lbl_time.configure(text=data['time'])
             self.lbl_speed.configure(text=f"{data['speed']:.1f}")
             self.lbl_status.configure(text=data['status'], fg_color=data['color_code'])
-            self.lbl_coord.configure(text=f"{data['lat']:.5f}, {data['lon']:.5f}")
-
+            
+            # [KEY] Show Real Coords in Label
+            self.lbl_coord.configure(text=f"{data['real_lat']:.5f}, {data['real_lon']:.5f}")
+            
             logs_to_show = [log for log in self.cached_logs if log['trigger_idx'] <= idx]
             self.update_logs_display(logs_to_show)
             self.update_map_scale() 
         except: pass
+
+    # [FIX] Missing function added back
+    def zoom_to_fit(self):
+        if not self.path_points: return
+        lats = [p[0] for p in self.path_points]
+        lons = [p[1] for p in self.path_points]
+        if lats and lons:
+            try:
+                min_lat, max_lat = min(lats), max(lats)
+                min_lon, max_lon = min(lons), max(lons)
+                if min_lat == max_lat and min_lon == max_lon:
+                    self.map_widget.set_position(min_lat, min_lon)
+                    self.map_widget.set_zoom(15)
+                else:
+                    self.map_widget.fit_bounding_box((max_lat, min_lon), (min_lat, max_lon))
+            except: pass
 
     def zoom_to_car(self):
         if self.car_marker:
@@ -629,7 +704,6 @@ class GPSTrackingApp(ctk.CTk):
         self.lbl_coord.configure(text="- , -")
         self.scale_canvas.delete("all")
         self.reset_logs()
-        # Reset Measure
         self.is_measuring = False
         self.measure_coords = []
         self.measure_point_markers = []
@@ -638,16 +712,18 @@ class GPSTrackingApp(ctk.CTk):
         self.btn_measure.configure(text="📏 เริ่มวัดระยะทาง", fg_color="gray40")
         self.measure_info_frame.place_forget()
         self.map_widget.canvas.config(cursor="")
-        self.map_widget.right_click_menu_commands = [] # Clear menu
+        self.map_widget.right_click_menu_commands = [] 
+        # Clear arrow
+        self.map_widget.canvas.delete("offscreen_arrow")
 
     # --- LOG POOL ---
     def init_log_pool(self):
         self.log_widgets_pool = []
         for _ in range(self.MAX_LOG_DISPLAY):
-            row_frame = ctk.CTkFrame(self.log_scroll, fg_color="transparent", height=30)
-            status_box = ctk.CTkLabel(row_frame, text="", width=20, height=20, corner_radius=4)
-            status_box.pack(side="left", padx=(10, 10))
-            info_text = ctk.CTkLabel(row_frame, text="", font=("Consolas", 16), text_color="white")
+            row_frame = ctk.CTkFrame(self.log_scroll, fg_color="transparent", height=20)
+            status_box = ctk.CTkLabel(row_frame, text="", width=15, height=15, corner_radius=4)
+            status_box.pack(side="left", padx=(5, 5))
+            info_text = ctk.CTkLabel(row_frame, text="", font=("Consolas", 14), text_color="white")
             info_text.pack(side="left")
             self.log_widgets_pool.append({"frame": row_frame, "box": status_box, "label": info_text, "active": False})
 
@@ -661,7 +737,7 @@ class GPSTrackingApp(ctk.CTk):
                 widget_set["box"].configure(fg_color=data['color'])
                 widget_set["label"].configure(text=f"[{data['time']}]  {data['status']}  (Row: {data['row']})")
                 if not widget_set["active"]:
-                    widget_set["frame"].pack(fill="x", pady=1)
+                    widget_set["frame"].pack(fill="x", pady=0)
                     widget_set["active"] = True
             else:
                 if widget_set["active"]:
