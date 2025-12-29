@@ -37,6 +37,9 @@ class GPSTrackingApp(ctk.CTk):
         self.cached_logs = [] 
         self.log_widgets_pool = [] 
         
+        # [KEY VAR] ตัวแปรแม่ข่าย
+        self.current_frame = 0 
+        
         # [SETTING] UI Configuration
         self.MAX_LOG_DISPLAY = 5 
         self.log_visible = True
@@ -46,7 +49,7 @@ class GPSTrackingApp(ctk.CTk):
         
         # [KEY CONTROL VARS]
         self.key_loop_job = None
-        self.current_key_direction = 0 # 0=Stop, -1=Left, 1=Right
+        self.current_key_direction = 0 
         
         # [MEASURE VARS]
         self.is_measuring = False
@@ -61,15 +64,17 @@ class GPSTrackingApp(ctk.CTk):
         self.trans_icon = create_transparent_icon()
         self.current_icon_key = None 
 
-        # Bindings (ใช้ return "break" เพื่อไม่ให้ Map/Slider แย่งปุ่ม)
-        self.bind("<KeyPress-Left>", lambda e: self.on_key_press(e, -1))
-        self.bind("<KeyRelease-Left>", lambda e: self.on_key_release(e, -1))
-        self.bind("<KeyPress-Right>", lambda e: self.on_key_press(e, 1))
-        self.bind("<KeyRelease-Right>", lambda e: self.on_key_release(e, 1))
+        # Bindings
+        self.bind_all("<KeyPress-Left>", lambda e: self.on_key_press(e, -1))
+        self.bind_all("<KeyRelease-Left>", lambda e: self.on_key_release(e, -1))
+        self.bind_all("<KeyPress-Right>", lambda e: self.on_key_press(e, 1))
+        self.bind_all("<KeyRelease-Right>", lambda e: self.on_key_release(e, 1))
 
         self.bind("<Delete>", lambda e: self.undo_measure_point())
         self.bind("<BackSpace>", lambda e: self.undo_measure_point())
         self.bind("<Escape>", lambda e: self.clear_measurements())
+        
+        self.bind("<Button-1>", lambda e: self.focus_set())
 
         self.setup_ui()
 
@@ -90,7 +95,7 @@ class GPSTrackingApp(ctk.CTk):
         self.btn_load = ctk.CTkButton(self.sidebar, text="📂 เลือกไฟล์ CSV", height=40, font=ctk.CTkFont(size=16, weight="bold"), command=self.load_csv_action)
         self.btn_load.pack(padx=20, pady=5, fill="x")
 
-        ctk.CTkLabel(self.sidebar, text="📅 เลือกช่วงเวลา:", font=("Arial", 14, "bold"), text_color="gray").pack(padx=20, pady=(5, 0), anchor="w")
+        ctk.CTkLabel(self.sidebar, text="📅 เลือกวันที่:", font=("Arial", 14, "bold"), text_color="gray").pack(padx=20, pady=(5, 0), anchor="w")
         self.date_var = ctk.StringVar(value="-- กรุณาโหลดไฟล์ --")
         self.date_combo = ctk.CTkComboBox(self.sidebar, variable=self.date_var, height=30, font=("Arial", 14), state="disabled", command=self.on_date_selected)
         self.date_combo.pack(padx=20, pady=(5, 5), fill="x")
@@ -98,11 +103,35 @@ class GPSTrackingApp(ctk.CTk):
         self.lbl_total_count = ctk.CTkLabel(self.sidebar, text="", font=("Arial", 14, "bold"), text_color=cfg.COLORS["warning"])
         self.lbl_total_count.pack(padx=20, pady=0, anchor="w")
 
-        # Control Group
+        # --- NEW TIME SELECTION (DROPDOWN) ---
+        time_group = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        time_group.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(time_group, text="⏰ เลือกช่วงเวลา:", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=0)
+        time_frame = ctk.CTkFrame(time_group, fg_color="transparent")
+        time_frame.pack(fill="x", pady=2)
+        
+        # Generate Time List (00:00 - 23:00)
+        self.time_values = [f"{h:02d}:00" for h in range(24)]
+        self.time_values_end = self.time_values + ["23:59"]
+
+        # Dropdown Start
+        self.combo_time_start = ctk.CTkOptionMenu(time_frame, values=self.time_values, width=90, height=30)
+        self.combo_time_start.set("00:00") # Default
+        self.combo_time_start.pack(side="left", padx=(5, 5))
+
+        ctk.CTkLabel(time_frame, text="-", font=("Arial", 18, "bold")).pack(side="left")
+
+        # Dropdown End
+        self.combo_time_end = ctk.CTkOptionMenu(time_frame, values=self.time_values_end, width=90, height=30)
+        self.combo_time_end.set("23:59") # Default
+        self.combo_time_end.pack(side="left", padx=(5, 5))
+
+        # Control Group (Row & Limit)
         ctrl_group = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         ctrl_group.pack(fill="x", padx=10, pady=5)
         
-        ctk.CTkLabel(ctrl_group, text="🔢 เลือกช่วงแถว:", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=0)
+        ctk.CTkLabel(ctrl_group, text="🔢 เลือกช่วงแถว (Option):", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=0)
         row_frame = ctk.CTkFrame(ctrl_group, fg_color="transparent")
         row_frame.pack(fill="x", pady=2)
         self.entry_start = ctk.CTkEntry(row_frame, width=80, height=30, placeholder_text="Start")
@@ -111,7 +140,7 @@ class GPSTrackingApp(ctk.CTk):
         self.entry_end = ctk.CTkEntry(row_frame, width=80, height=30, placeholder_text="End")
         self.entry_end.pack(side="left", padx=(5, 5))
 
-        ctk.CTkLabel(ctrl_group, text="⚙️ จำกัดจุดกราฟิก:", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=(5, 0))
+        ctk.CTkLabel(ctrl_group, text="⚙️ จำกัดจุดแสดงผล:", font=("Arial", 14, "bold")).pack(anchor="w", padx=5, pady=(5, 0))
         limit_frame = ctk.CTkFrame(ctrl_group, fg_color="transparent")
         limit_frame.pack(fill="x", pady=2)
         self.entry_limit = ctk.CTkEntry(limit_frame, width=90, height=30)
@@ -210,6 +239,9 @@ class GPSTrackingApp(ctk.CTk):
         
         self.map_widget.canvas.bind("<B1-Motion>", self.update_offscreen_indicator, add="+")
         self.map_widget.canvas.bind("<ButtonRelease-1>", self.update_offscreen_indicator, add="+")
+        
+        # [KEY FIX] Focus
+        self.map_widget.canvas.bind("<Button-1>", lambda e: self.focus_set(), add="+")
 
         # 2. Control Frame (Timeline)
         self.control_frame = ctk.CTkFrame(self.right_panel, corner_radius=0, height=60, fg_color=("white", "#212121"))
@@ -279,6 +311,7 @@ class GPSTrackingApp(ctk.CTk):
             c_lat, c_lon = self.map_widget.get_position()
             t_lat, t_lon = self.car_marker.position
             
+            # คำนวณระยะทาง
             dist = haversine_distance(c_lat, c_lon, t_lat, t_lon)
             if dist >= 1000:
                 dist_str = f"{dist/1000:.1f} กม."
@@ -464,6 +497,8 @@ class GPSTrackingApp(ctk.CTk):
         self.date_combo.set(cfg.ALL_DAYS_OPTION) 
         self.entry_start.delete(0, "end")
         self.entry_end.delete(0, "end")
+        self.combo_time_start.set("00:00")
+        self.combo_time_end.set("23:59")
         self.on_date_selected(cfg.ALL_DAYS_OPTION)
         self.lbl_file_info.configure(text=f"โหลดสำเร็จ")
 
@@ -482,20 +517,43 @@ class GPSTrackingApp(ctk.CTk):
 
     def apply_settings(self):
         if self.filtered_df is None or self.filtered_df.empty: return
+        
+        # 1. Filter by Time (Using OptionMenu)
+        t_start_str = self.combo_time_start.get()
+        t_end_str = self.combo_time_end.get()
+        
+        df_to_process = self.filtered_df.copy()
+        
+        # คอลัมน์เวลาชื่ออะไร? หาให้เจอ
+        cols = {c.lower().strip(): c for c in df_to_process.columns}
+        col_time = cols.get('r-time') or cols.get('time')
+        
+        if col_time and t_start_str and t_end_str:
+            try:
+                # แปลงเวลาใน DF เป็น string HH:MM เพื่อเทียบ
+                time_series = df_to_process[col_time].dt.strftime('%H:%M')
+                mask = (time_series >= t_start_str) & (time_series <= t_end_str)
+                df_to_process = df_to_process[mask]
+            except Exception as e:
+                print(f"Time filter error: {e}")
+
+        # 2. Filter by Row
         start_val = self.entry_start.get().strip()
         end_val = self.entry_end.get().strip()
-        df_to_process = self.filtered_df
         if start_val or end_val:
             try:
                 s = int(start_val) if start_val else 0
-                e = int(end_val) if end_val else len(self.filtered_df)
-                if s < e: df_to_process = self.filtered_df.iloc[s:e]
+                e = int(end_val) if end_val else len(df_to_process)
+                if s < e: df_to_process = df_to_process.iloc[s:e]
             except ValueError: pass 
+            
         limit_val = 0
         try:
             val = self.entry_limit.get().strip()
             if val: limit_val = int(val)
         except: pass
+        
+        self.lbl_total_count.configure(text=f"แสดงผล: {len(df_to_process):,} จุด")
         self.process_display_data(df_to_process, limit_val)
         self.draw_map_elements()
 
@@ -523,7 +581,7 @@ class GPSTrackingApp(ctk.CTk):
         records = path_df.to_dict('records')
         prev_status = None
         
-        # [SETTING] 10 = Smooth
+        # [SETTING] Smooth
         self.interp_steps = 10 
 
         for i in range(len(records)):
@@ -589,7 +647,8 @@ class GPSTrackingApp(ctk.CTk):
                 )
         except: pass
         
-        # Smooth Slider
+        # [KEY FIX] ตั้งค่าตัวแปรแม่ข่าย
+        self.current_frame = 0
         n_frames = len(self.animation_points)
         if n_frames > 1:
             self.slider.configure(from_=0, to=n_frames-1, number_of_steps=n_frames, state="normal")
@@ -598,16 +657,15 @@ class GPSTrackingApp(ctk.CTk):
             self.slider.configure(state="disabled") 
         
         self.after(200, self.zoom_to_fit)
-        self.on_slider_move(0)
+        self.perform_update(0) 
         self.update_map_scale()
 
-    # --- CONTROLS ---
-    # [KEY] Use 'return "break"' to stop other widgets from stealing the event
+    # --- CONTROLS [GAME STYLE] ---
     def on_key_press(self, event, direction):
         self.current_key_direction = direction
         if self.key_loop_job is None:
             self.move_loop()
-        return "break" # <--- IMPORTANT!
+        return "break" 
 
     def on_key_release(self, event, direction):
         if self.current_key_direction == direction:
@@ -619,13 +677,12 @@ class GPSTrackingApp(ctk.CTk):
             self.key_loop_job = None
             return
 
-        current = int(self.slider.get())
-        new_val = current + self.current_key_direction
+        new_val = self.current_frame + self.current_key_direction
         
         if 0 <= new_val < len(self.animation_points):
-            self.slider.set(new_val)
+            self.slider.set(new_val) 
             self.perform_update(new_val)
-            self.update_idletasks() # Smooth update
+            self.update_idletasks() 
             self.key_loop_job = self.after(60, self.move_loop)
         else:
             self.current_key_direction = 0
@@ -633,17 +690,17 @@ class GPSTrackingApp(ctk.CTk):
 
     def move_forward(self, event=None):
         if not self.animation_points: return
-        current = self.slider.get()
-        if current < len(self.animation_points) - 1:
-            self.slider.set(current + 1)
-            self.on_slider_move(current + 1)
+        new_val = self.current_frame + 1
+        if new_val < len(self.animation_points):
+            self.slider.set(new_val)
+            self.perform_update(new_val)
 
     def move_backward(self, event=None):
         if not self.animation_points: return
-        current = self.slider.get()
-        if current > 0:
-            self.slider.set(current - 1)
-            self.on_slider_move(current - 1)
+        new_val = self.current_frame - 1
+        if new_val >= 0:
+            self.slider.set(new_val)
+            self.perform_update(new_val)
 
     def on_slider_move(self, value):
         if self.slider_job:
@@ -656,6 +713,9 @@ class GPSTrackingApp(ctk.CTk):
         idx = int(value)
         if idx >= len(self.animation_points): 
             idx = len(self.animation_points) - 1
+        
+        # [KEY] Update Master Variable
+        self.current_frame = idx 
             
         try:
             data = self.animation_points[idx]
@@ -677,6 +737,7 @@ class GPSTrackingApp(ctk.CTk):
             self.update_map_scale() 
         except: pass
 
+    # ... (Rest of functions unchanged)
     def zoom_to_fit(self):
         if not self.path_points: return
         lats = [p[0] for p in self.path_points]
