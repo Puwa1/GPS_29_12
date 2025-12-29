@@ -17,7 +17,7 @@ COLORS = {
 }
 
 # ตั้งค่าทั่วไป
-APP_TITLE = "GPS Tracking"
+APP_TITLE = "GPS Tracking Version 1.0"
 DEFAULT_WINDOW_SIZE = "1600x900"
 MAX_LOG_DISPLAY = 100
 ALL_DAYS_OPTION = "--- ดูข้อมูลทั้งหมด (All Days) ---"
