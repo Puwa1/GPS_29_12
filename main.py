@@ -677,22 +677,13 @@ class GPSTrackingApp(ctk.CTk):
             self.key_loop_job = None
             return
 
-        # [แก้ตรงนี้] คูณด้วย interp_steps เพื่อกระโดดข้ามจุดหลอก ไปหาจุดจริงทันที
-        step_size = self.interp_steps 
-        new_val = self.current_frame + (self.current_key_direction * step_size)
+        new_val = self.current_frame + self.current_key_direction
         
-        # ปัดเศษให้ลงล็อก (เผื่อหลุดเฟรม)
-        if step_size > 1:
-            new_val = (round(new_val / step_size) * step_size)
-
         if 0 <= new_val < len(self.animation_points):
             self.slider.set(new_val) 
             self.perform_update(new_val)
             self.update_idletasks() 
-            
-            # [CONFIG] ปรับความเร็วตอนกดค้าง (เพิ่มเลข = ช้าลง, ลดเลข = เร็วขึ้น)
-            # แนะนำ 100-150ms เพราะมันกระโดดไกลแล้ว เดี๋ยวตาลาย
-            self.key_loop_job = self.after(120, self.move_loop)
+            self.key_loop_job = self.after(60, self.move_loop)
         else:
             self.current_key_direction = 0
             self.key_loop_job = None
